@@ -1,0 +1,107 @@
+version: 1
+gateway:
+  coordinator_key: openclaw
+  default_llm_key: ""
+  default_protocol: tool
+  memory_window: 20
+  allow_direct_executor_fallback: true
+agents:
+  - agent_key: openclaw
+    display_name: OpenClaw
+    role: coordinator
+    adapter: openclaw
+    enabled: true
+    protocol: tool
+    description: 唯一协调者，负责所有任务决策、汇总和记忆。
+    capabilities:
+      - memory
+      - feishu
+      - orchestration
+      - decision
+  - agent_key: codex
+    display_name: Codex
+    role: executor
+    adapter: codex
+    enabled: true
+    protocol: tool
+    description: 代码开发、接口落地和工程执行。
+    capabilities:
+      - code
+      - backend
+      - frontend
+      - integration
+llms:
+  - llm_key: openai
+    provider_type: openai
+    display_name: OpenAI
+    enabled: false
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    default_model: gpt-5.4
+    options: {}
+  - llm_key: anthropic
+    provider_type: anthropic
+    display_name: Anthropic
+    enabled: false
+    base_url: https://api.anthropic.com/v1
+    api_key_env: ANTHROPIC_API_KEY
+    default_model: claude-sonnet-4-5
+    options: {}
+  - llm_key: glm
+    provider_type: glm
+    display_name: GLM
+    enabled: false
+    base_url: https://open.bigmodel.cn/api/paas/v4
+    api_key_env: GLM_API_KEY
+    default_model: glm-4.5
+    options: {}
+  - llm_key: minimax
+    provider_type: minimax
+    display_name: MiniMax
+    enabled: false
+    base_url: https://api.minimax.chat/v1
+    api_key_env: MINIMAX_API_KEY
+    default_model: MiniMax-M1
+    options: {}
+  - llm_key: deepseek
+    provider_type: deepseek
+    display_name: DeepSeek
+    enabled: false
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+    default_model: deepseek-chat
+    options: {}
+  - llm_key: local
+    provider_type: local
+    display_name: Local Model
+    enabled: false
+    base_url: http://127.0.0.1:11434/v1
+    api_key_env: ""
+    default_model: local-default
+    options: {}
+protocols:
+  - protocol_key: mcp
+    display_name: MCP
+    enabled: true
+    description: 面向上下文和工具协议的统一桥接。
+  - protocol_key: a2a
+    display_name: A2A
+    enabled: true
+    description: 智能体到智能体的统一调用协议。
+  - protocol_key: tool
+    display_name: Tool Protocol
+    enabled: true
+    description: 面向内部工具与函数调用的统一抽象。
+skills:
+  - skill_key: alert_analyze
+    display_name: 告警分析
+    default_agent_key: openclaw
+    description: 对告警、风暴、防抖和处置建议进行归纳。
+  - skill_key: report_generate
+    display_name: 报告生成
+    default_agent_key: openclaw
+    description: 对运行数据生成日报、周报、月报。
+  - skill_key: device_query
+    display_name: 设备查询
+    default_agent_key: codex
+    description: 对设备、区域、RTSP、链路等进行查询。

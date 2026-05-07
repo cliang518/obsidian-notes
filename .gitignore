@@ -1,0 +1,37 @@
+# ====================
+# V2 平台终极 Git 忽略清单
+# ====================
+
+# 1. 前端依赖与产物
+node_modules/
+dist/
+.DS_Store
+
+# 2. 后端与运行环境
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# 3. 日志与缓存
+logs/
+*.log
+.temp/
+.cache/
+
+# 4. 打包产物与大文件
+build/
+release/
+installer/
+runtime/
+*.exe
+*.dll
+*.iso
+*.zip
+*.tar.gz
+*.mp4
+*.png
+*.jpg
+assets-preview*.png
