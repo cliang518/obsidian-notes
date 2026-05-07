@@ -1,512 +1,26 @@
 <template>
-  <div class="asset-page-wrapper" style="height: calc(100vh - 80px); overflow: hidden; background: #0a0a0a;">
-    <el-container style="height: 100%; width: 100%; overflow: hidden;">
-      <el-aside width="240px" style="width: 240px; min-width: 240px; max-width: 300px; flex: 0 0 240px; flex-shrink: 0; background: transparent; border-right: 1px solid rgba(255, 255, 255, 0.1); overflow: hidden;" class="asset-floor-aside">
-        <div class="asset-floor-panel">
-          <div class="asset-floor-head">
-            <p class="eyebrow">SPACE TREE</p>
-            <h3>楼层导航</h3>
-            <span>由资产区域接口生成的真实空间树</span>
-          </div>
-          <el-tree
-            :data="floorData"
-            :props="floorTreeProps"
-            style="background: transparent; color: #409EFF;"
-            class="asset-floor-tree"
-            node-key="tree_key"
-            :current-node-key="selectedFloorKey"
-            :indent="10"
-            default-expand-all
-            highlight-current
-            show-overflow-tooltip
-            @node-click="handleNodeClick"
-          >
-            <template #default="{ node }">
-              <el-tooltip :content="node.label" placement="right" :show-after="350" :disabled="!node.label">
-                <span class="asset-tree-label">{{ node.label }}</span>
-              </el-tooltip>
-            </template>
-          </el-tree>
-        </div>
-      </el-aside>
+  <div class="asset-page-wrapper asset-center-page">
+    <div class="asset-center-canvas">
+      <SpaceTree
+        :floor-data="floorData"
+        :tree-props="floorTreeProps"
+        :selected-key="selectedFloorKey"
+        @node-select="handleNodeSelect"
+      />
 
-      <el-container class="asset-content-shell" style="height: 100%; flex: 1; min-width: 0; overflow: hidden;">
-        <el-main class="asset-main-shell asset-primary-col" style="flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 20px;">
-            <div class="asset-primary-stack">
-              <div class="asset-slim-toolbar">
-                <el-button size="small" type="primary" @click="openDeviceForm()">添加资产</el-button>
-                <el-button size="small" @click="exportCurrentAssets">导出当前列表</el-button>
-                <el-button size="small" @click="resetFilters">恢复默认</el-button>
-                <el-button size="small" type="primary" :loading="assetLoading" @click="refreshStreamDiagnostics">{{ streamDiagnosticButtonLabel }}</el-button>
-                <el-button size="small" @click="quickPlatform('10.0.59.200')">主平台 200</el-button>
-                <el-button size="small" @click="quickPlatform('10.0.59.205')">205 分平台</el-button>
-                <el-button size="small" @click="quickBinding('pending')">待补归属</el-button>
-                <el-button size="small" :loading="fieldValidationImportBusy" @click="triggerFieldValidationImport">
-                  {{ fieldValidationImportBusy ? '导入中...' : '导入现场补录表' }}
-                </el-button>
-                <el-button size="small" :loading="switchGapImportBusy" @click="triggerSwitchGapImport">
-                  {{ switchGapImportBusy ? '导入中...' : '导入交换机核实表' }}
-                </el-button>
-                <input ref="fieldValidationInputRef" type="file" accept=".csv,text/csv" style="display: none" @change="handleFieldValidationImport" />
-                <input ref="switchGapInputRef" type="file" accept=".csv,text/csv" style="display: none" @change="handleSwitchGapImport" />
-              </div>
+      <AssetTable
+        :context="assetTableContext"
+        @row-click="handleDeviceSelect"
+        @update:sort-mode="updateAssetSortMode"
+        @update:switch-sort-mode="updateSwitchSortMode"
+        @update:page="updateAssetPage"
+      />
 
-              <div class="asset-kpi-grid">
-                <article class="metric-card">
-                  <span>当前范围</span>
-                  <strong>{{ visibleAssetCount }}</strong>
-                  <small>{{ filters.device_type === 'switch' ? '台交换机' : '路摄像头' }}</small>
-                </article>
-                <article class="metric-card">
-                  <span>已选对象</span>
-                  <strong>{{ currentSelectionTitle || '未选择' }}</strong>
-                  <small>{{ currentSelectionMeta }}</small>
-                </article>
-                <article class="metric-card">
-                  <span>状态概览</span>
-                  <strong>{{ filters.device_type === 'switch' ? switchReviewCount : streamAbnormalCount }}</strong>
-                  <small>{{ filters.device_type === 'switch' ? '待核实交换机' : '视频待核验' }}</small>
-                </article>
-                <article class="metric-card">
-                  <span>最近刷新</span>
-                  <strong>{{ lastUpdatedLabel }}</strong>
-                  <small>{{ feedbackMessage || '暂无回写提示' }}</small>
-                </article>
-              </div>
+      <SnapshotPanel :context="snapshotPanelContext" />
+    </div>
 
-              <el-card class="asset-filter-panel" shadow="never">
-                <el-form :inline="true" class="asset-filter-form" label-position="top">
-                  <el-form-item label="设备名">
-                    <el-input v-model.trim="filters.device_name" clearable placeholder="例如 2F 南区摄像头" @keyup.enter="applyAssetFilters" />
-                  </el-form-item>
-                  <el-form-item label="IP">
-                    <el-input v-model.trim="filters.device_ip" clearable placeholder="例如 10.0.58.86" @keyup.enter="applyAssetFilters" />
-                  </el-form-item>
-                  <el-form-item label="关键词">
-                    <el-input v-model.trim="filters.q" clearable placeholder="摄像头名称、通道号、交换机" @keyup.enter="applyAssetFilters" />
-                  </el-form-item>
-                  <el-form-item label="设备类型">
-                    <el-select v-model="filters.device_type" placeholder="请选择" @change="loadChannels">
-                      <el-option label="摄像头" value="camera" />
-                      <el-option label="交换机" value="switch" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="区域">
-                    <el-select v-model="filters.area_id" placeholder="请选择" clearable filterable @change="loadChannels">
-                      <el-option label="全部区域" value="" />
-                      <el-option v-for="area in areas" :key="area.id" :label="areaOptionLabel(area)" :value="String(area.id)" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="平台">
-                    <el-select v-model="filters.source_management_ip" placeholder="请选择" clearable @change="loadChannels">
-                      <el-option label="全部平台" value="" />
-                      <el-option label="主平台 200" value="10.0.59.200" />
-                      <el-option label="205 分平台" value="10.0.59.205" />
-                    </el-select>
-                  </el-form-item>
-                  <template v-if="filters.device_type === 'camera'">
-                    <el-form-item label="归属">
-                      <el-select v-model="filters.switch_binding_state" placeholder="请选择" clearable @change="loadChannels">
-                        <el-option label="全部归属" value="" />
-                        <el-option label="已归属交换机" value="bound" />
-                        <el-option label="待补归属" value="pending" />
-                      </el-select>
-                    </el-form-item>
-                    <el-form-item label="视频验收">
-                      <el-select v-model="filters.stream_probe_state" placeholder="请选择" clearable @change="loadChannels">
-                        <el-option label="全部验收状态" value="" />
-                        <el-option label="取流未通过" value="abnormal" />
-                        <el-option label="取流通过" value="ok" />
-                        <el-option label="历史通过 / 待复测" value="stale_ok" />
-                        <el-option label="过期待复测" value="stale_abnormal" />
-                        <el-option label="未检测" value="unknown" />
-                      </el-select>
-                    </el-form-item>
-                    <el-form-item label="排序">
-                      <el-select v-model="sortMode" placeholder="请选择">
-                        <el-option label="通道号倒序" value="channel_desc" />
-                        <el-option label="通道号正序" value="channel_asc" />
-                        <el-option label="IP 正序" value="ip_asc" />
-                        <el-option label="区域优先" value="area_asc" />
-                        <el-option label="待补优先" value="binding_first" />
-                        <el-option label="待核验优先" value="stream_failed_first" />
-                      </el-select>
-                    </el-form-item>
-                  </template>
-                  <template v-else>
-                    <el-form-item label="交换机角色">
-                      <el-select v-model="filters.switch_role_state" placeholder="请选择" clearable @change="loadChannels">
-                        <el-option label="全部角色" value="" />
-                        <el-option label="接入交换机" value="camera_access" />
-                        <el-option label="疑似汇聚/级联" value="suspected_aggregation" />
-                        <el-option label="待现场核实" value="unknown" />
-                        <el-option label="不可达 / Telnet 关闭" value="unreachable" />
-                        <el-option label="系统已自动标记" value="auto_flagged" />
-                      </el-select>
-                    </el-form-item>
-                    <el-form-item label="排序">
-                      <el-select v-model="switchSortMode" placeholder="请选择">
-                        <el-option label="IP 正序" value="ip_asc" />
-                        <el-option label="疑似汇聚优先" value="aggregation_first" />
-                        <el-option label="接入交换机优先" value="access_first" />
-                        <el-option label="命中摄像头优先" value="camera_match_desc" />
-                        <el-option label="L2 MAC 多的优先" value="mac_desc" />
-                      </el-select>
-                    </el-form-item>
-                  </template>
-                  <el-form-item>
-                    <div class="filter-actions">
-                      <el-button size="small" type="primary" :loading="assetLoading" @click="applyAssetFilters">立即筛选</el-button>
-                      <el-button :disabled="assetLoading" @click="resetFilters">清空</el-button>
-                      <el-button @click="exportCurrentAssets">导出</el-button>
-                      <el-button @click="selectFirstVisible">定位首条</el-button>
-                    </div>
-                  </el-form-item>
-                </el-form>
-              </el-card>
-
-              <el-card class="asset-list-panel" shadow="never">
-                <template #header>
-                  <div class="list-toolbar">
-                    <div>
-                      <p class="eyebrow">{{ filters.device_type === 'switch' ? 'SWITCH LIST' : 'CAMERA LIST' }}</p>
-                      <h3>{{ filters.device_type === 'switch' ? '交换机清单' : '摄像头清单' }}</h3>
-                      <span>第 {{ page }} / {{ totalPages }} 页，每页 {{ pageSize }} {{ filters.device_type === 'switch' ? '台' : '路' }}</span>
-                    </div>
-                    <div class="pager">
-                      <el-button size="small" @click="ensureSelectedPage">定位已选项</el-button>
-                      <el-button size="small" :disabled="page <= 1" @click="prevPage">上一页</el-button>
-                      <el-button size="small" :disabled="page >= totalPages" @click="nextPage">下一页</el-button>
-                    </div>
-                  </div>
-                </template>
-
-                <div class="asset-table-scroll">
-                  <el-table
-                    :data="tableRows"
-                    height="100%"
-                    v-loading="assetLoading"
-                    stripe
-                    border
-                    highlight-current-row
-                    class="asset-table"
-                    @row-click="onAssetRowClick"
-                  >
-                    <el-table-column v-if="filters.device_type === 'camera'" label="点位 / 状态" min-width="250">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <strong>{{ cameraTitle(scope.row) }}</strong>
-                          <span class="table-cell-sub">{{ scope.row.camera_label || scope.row.camera_ip || '-' }}</span>
-                          <el-tag size="small" :type="assetStatusTagType(scope.row)">{{ assetStatusLabel(scope.row) }}</el-tag>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'camera'" label="IP / 通道 / 平台" min-width="220">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <span class="mono">{{ scope.row.camera_ip || '-' }}</span>
-                          <span>通道 {{ scope.row.channel_no || '-' }}</span>
-                          <span>{{ platformLabel(scope.row) }}</span>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'camera'" label="区域 / 精度" min-width="200">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <span>{{ shortArea(scope.row.area_menu_label || scope.row.area_display_name || scope.row.direct_area) }}</span>
-                          <el-tag v-if="areaAccuracyLabel(scope.row)" size="small" effect="plain">{{ areaAccuracyLabel(scope.row) }}</el-tag>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'camera'" label="交换机 / 端口" min-width="220">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <span>{{ scope.row.switch_label || scope.row.switch_ip || '未归属' }}</span>
-                          <span class="table-cell-sub">{{ scope.row.switch_port_name ? `端口 ${scope.row.switch_port_name}` : '待现场补齐' }}</span>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'camera'" label="归属 / 验收" min-width="200">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <span>{{ bindingLabel(scope.row) }}</span>
-                          <span class="table-cell-sub">{{ streamProbeDisplayLabel(scope.row) || '未检测' }}</span>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'camera'" label="操作" min-width="320">
-                      <template #default="scope">
-                        <div class="table-actions">
-                          <el-button size="small" @click.stop="selectChannel(scope.row); openPreview(scope.row)">预览</el-button>
-                          <el-button size="small" @click.stop="selectChannel(scope.row); refreshSelectedSnapshot()">快照</el-button>
-                          <el-button size="small" @click.stop="selectChannel(scope.row); openBindingDialog(scope.row)">归属</el-button>
-                          <el-button size="small" @click.stop="selectChannel(scope.row); openDeviceForm(scope.row)">编辑</el-button>
-                          <el-button size="small" @click.stop="selectChannel(scope.row); openSelectedChannelTopology()">拓扑</el-button>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'switch'" label="交换机 / 状态" min-width="250">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <strong>{{ clean(scope.row.hostname || scope.row.display_name || scope.row.management_ip || '-') }}</strong>
-                          <span class="table-cell-sub">{{ clean(scope.row.display_name || scope.row.hostname || scope.row.management_ip || '-') }}</span>
-                          <el-tag size="small" :type="assetStatusTagType(scope.row)">{{ assetStatusLabel(scope.row) }}</el-tag>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'switch'" label="管理 IP / 厂商 / 型号" min-width="240">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <span class="mono">{{ scope.row.management_ip || '-' }}</span>
-                          <span>{{ clean(scope.row.vendor || '-') }}</span>
-                          <span>{{ clean(scope.row.model || '-') }}</span>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'switch'" label="区域 / 角色" min-width="200">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <span>{{ clean(scope.row.area_display_name || scope.row.area_name || '-') }}</span>
-                          <span class="table-cell-sub">{{ scope.row.topology_role_label || '待现场核实' }}</span>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'switch'" label="探测 / 来源" min-width="200">
-                      <template #default="scope">
-                        <div class="table-cell-stack">
-                          <span>{{ healthStateLabel(scope.row.health_state) }}</span>
-                          <span class="table-cell-sub">{{ clean(scope.row.primary_source_type || 'manual') }}</span>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column v-if="filters.device_type === 'switch'" label="操作" min-width="300">
-                      <template #default="scope">
-                        <div class="table-actions">
-                          <el-button size="small" :disabled="switchProbeBusy" @click.stop="selectSwitch(scope.row); probeSelectedSwitch()">探测</el-button>
-                          <el-button size="small" :disabled="!scope.row.management_ip" @click.stop="selectSwitch(scope.row); openSelectedSwitchTopology()">拓扑</el-button>
-                          <el-button size="small" @click.stop="selectSwitch(scope.row); openExistingDeviceForm(scope.row)">编辑</el-button>
-                        </div>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </div>
-
-                <div class="asset-table-footer">
-                  <el-pagination
-                    v-model:current-page="page"
-                    :page-size="pageSize"
-                    :total="visibleAssetCount"
-                    layout="total, prev, pager, next, jumper"
-                    background
-                    @current-change="selectFirstVisible"
-                  />
-                </div>
-              </el-card>
-            </div>
-        </el-main>
-
-        <el-aside width="400px" style="position: sticky; top: 0; height: 100%; overflow-y: auto; width: 400px; min-width: 400px; max-width: 400px; border-left: 1px solid rgba(255, 255, 255, 0.1); background: rgba(25, 25, 25, 0.7); backdrop-filter: blur(15px);" class="asset-side-sticky">
-            <div class="asset-side-panel">
-              <el-card class="selected-overview asset-detail-panel" shadow="never" style="background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(15px);">
-                <el-scrollbar class="asset-detail-scrollbar">
-                  <article v-if="feedbackMessage" class="asset-toast">
-                    <strong>{{ feedbackMessage }}</strong>
-                    <span>最近刷新：{{ lastUpdatedLabel }}</span>
-                  </article>
-
-                  <template v-if="filters.device_type === 'camera' && selectedChannel">
-                    <div class="selected-head">
-                      <div>
-                        <p class="eyebrow">SELECTED CAMERA</p>
-                        <h3>{{ cameraTitle(selectedChannel) }}</h3>
-                        <span class="mono">{{ selectedChannel.camera_ip || '-' }}</span>
-                      </div>
-                      <el-tag :type="assetStatusTagType(selectedChannel)">{{ assetStatusLabel(selectedChannel) }}</el-tag>
-                    </div>
-
-                    <div class="summary-kpis">
-                      <article class="summary-chip"><span>视频验收</span><strong>{{ streamProbeDisplayLabel(selectedChannel) || '未扫描' }}</strong></article>
-                      <article class="summary-chip"><span>链路置信</span><strong>{{ selectedChannel.topology_confidence ? `${Math.round(selectedChannel.topology_confidence * 100)}%` : '待确认' }}</strong></article>
-                      <article class="summary-chip"><span>所属平台</span><strong>{{ platformLabel(selectedChannel) }}</strong></article>
-                      <article class="summary-chip"><span>区域精度</span><strong>{{ areaAccuracyLabel(selectedChannel) || '常规口径' }}</strong></article>
-                    </div>
-
-                    <div class="primary-ops">
-                      <el-button type="primary" @click="openPreview(selectedChannel)">打开预览窗口</el-button>
-                      <el-button @click="refreshSelectedSnapshot">刷新快照</el-button>
-                      <el-button @click="openBindingDialog(selectedChannel)">修改链路归属</el-button>
-                      <el-button @click="openDeviceForm(selectedChannel)">编辑资产</el-button>
-                      <el-button @click="copyRtsp(selectedChannel)">复制 RTSP</el-button>
-                    </div>
-
-                    <div class="preview-card">
-                      <div class="preview-head">
-                        <div>
-                          <strong>实时快照</strong>
-                          <span>{{ selectedChannel.snapshot_capture_enabled ? '来自 RTSP 当前帧' : '当前通道暂不可抓帧' }}</span>
-                        </div>
-                        <el-button size="small" @click="refreshSelectedSnapshot">刷新快照</el-button>
-                      </div>
-                      <div class="snapshot-stage">
-                        <img v-if="selectedSnapshotUrl" :src="selectedSnapshotUrl" :alt="selectedChannel.camera_ip || 'snapshot'" class="snapshot-image" />
-                        <div v-else class="snapshot-placeholder">当前通道暂时抓不到实时快照，请检查 RTSP 地址、账号密码与网络链路。</div>
-                      </div>
-                      <div class="preview-actions">
-                        <el-button @click="openSnapshot(selectedChannel)">放大快照</el-button>
-                        <el-button :disabled="!selectedChannel.switch_ip" @click="openSelectedChannelTopology">在拓扑中查看</el-button>
-                        <el-button type="danger" @click="archiveSelectedDevice">归档当前资产</el-button>
-                      </div>
-                    </div>
-
-                    <div class="detail-section">
-                      <div class="section-mini-head">
-                        <strong>链路归属</strong>
-                        <span>{{ selectedChannel.topology_confidence ? `置信度 ${Math.round(selectedChannel.topology_confidence * 100)}%` : '待确认' }}</span>
-                      </div>
-                      <div class="link-card" :class="{ muted: selectedChannel.switch_binding_state !== 'bound' }">
-                        <div><label>交换机</label><strong>{{ clean(selectedChannel.switch_label || selectedChannel.switch_ip || '待补归属') }}</strong></div>
-                        <div><label>端口 / VLAN</label><strong>{{ selectedChannel.switch_port_name || '-' }}<template v-if="selectedChannel.switch_port_vlan_id"> / VLAN {{ selectedChannel.switch_port_vlan_id }}</template></strong></div>
-                        <div><label>归属来源</label><strong>{{ topologyEvidenceLabel(selectedChannel) }}</strong></div>
-                        <p>{{ clean(selectedChannel.topology_evidence_summary || '暂无链路证据，请通过拓扑补齐或现场核验。') }}</p>
-                      </div>
-                    </div>
-
-                    <div class="detail-section">
-                      <div class="section-mini-head">
-                        <strong>视频验收证据</strong>
-                        <el-button size="small" @click="copyDiagnostic(selectedChannel)">复制摘要</el-button>
-                      </div>
-                      <div class="rtsp-box">
-                        <label>主码流 RTSP</label>
-                        <p class="mono">{{ selectedChannel.rtsp_main || '当前通道没有主码流地址' }}</p>
-                      </div>
-                      <div class="stream-diagnostic-card" :class="streamStatusClass(selectedChannel)">
-                        <div>
-                          <strong>{{ streamProbeDisplayLabel(selectedChannel) || '未扫描' }}</strong>
-                          <span>最近扫描：{{ formatProbeTime(selectedChannel.stream_probe_checked_at) }}</span>
-                        </div>
-                        <p>{{ streamAdvice(selectedChannel) }}</p>
-                        <small v-if="selectedChannel.stream_probe_error">{{ clean(selectedChannel.stream_probe_error) }}</small>
-                      </div>
-                      <p class="diagnostic-scope-note">这里是资产验收证据，只证明最近一次视频取流是否可用；不会直接生成告警、工单或通知。是否进入告警中心，由连续失败、持续时间、影响范围和网络抖动规则统一判断。</p>
-                    </div>
-
-                    <div class="detail-section">
-                      <div class="section-mini-head"><strong>基础资料</strong><span>{{ sourceLineageLabel(selectedChannel) }}</span></div>
-                      <div class="detail-grid">
-                        <div><label>所属平台</label><p>{{ platformLabel(selectedChannel) }}</p></div>
-                        <div><label>通道号</label><p>{{ selectedChannel.channel_no || '-' }}</p></div>
-                        <div>
-                          <label>区域</label>
-                          <div class="detail-area-stack">
-                            <p>{{ clean(selectedChannel.area_menu_label || selectedChannel.area_display_name || selectedChannel.direct_area || '-') }}</p>
-                            <span v-if="areaAccuracyLabel(selectedChannel)" class="area-badge">{{ areaAccuracyLabel(selectedChannel) }}</span>
-                          </div>
-                          <small class="detail-area-note">{{ areaScopeNote(selectedChannel) }}</small>
-                        </div>
-                        <div><label>平台状态</label><p>{{ platformStatusLabel(selectedChannel.direct_platform_status) }}</p></div>
-                      </div>
-                      <div class="maintenance-actions">
-                        <el-button @click="openDeviceForm(null, selectedChannel)">按当前通道补建资产</el-button>
-                      </div>
-                    </div>
-                  </template>
-
-                  <template v-else-if="filters.device_type === 'switch' && selectedSwitch">
-                    <div class="selected-head">
-                      <div>
-                        <p class="eyebrow">SELECTED SWITCH</p>
-                        <h3>{{ clean(selectedSwitch.hostname || selectedSwitch.display_name || '-') }}</h3>
-                        <span class="mono">{{ selectedSwitch.management_ip || '-' }}</span>
-                      </div>
-                      <el-tag :type="assetStatusTagType(selectedSwitch)">{{ assetStatusLabel(selectedSwitch) }}</el-tag>
-                    </div>
-
-                    <div class="summary-kpis">
-                      <article class="summary-chip"><span>实时探测</span><strong>{{ healthStateLabel(selectedSwitch.live_probe_status) }}</strong></article>
-                      <article class="summary-chip"><span>拓扑角色</span><strong>{{ clean(selectedSwitch.topology_role_label || selectedSwitch.topology_gap_label || '待确认') }}</strong></article>
-                      <article class="summary-chip"><span>命中摄像头</span><strong>{{ selectedSwitch.live_probe_camera_match_count || 0 }}</strong></article>
-                      <article class="summary-chip"><span>L2 MAC</span><strong>{{ selectedSwitch.live_probe_l2_mac_count || 0 }}</strong></article>
-                    </div>
-
-                    <div class="primary-ops">
-                      <el-button type="primary" :loading="switchProbeBusy" @click="probeSelectedSwitch">{{ switchProbeBusy ? '实采中...' : '实时探测交换机' }}</el-button>
-                      <el-button :disabled="!selectedSwitch.management_ip" @click="openSelectedSwitchTopology">切到拓扑核实</el-button>
-                      <el-button @click="openExistingDeviceForm(selectedSwitch)">编辑交换机资产</el-button>
-                    </div>
-
-                    <div class="detail-section">
-                      <div class="section-mini-head">
-                        <strong>实时探测</strong>
-                        <span>{{ selectedSwitch.live_probe_checked_at ? selectedSwitch.live_probe_checked_at.replace('T', ' ') : '尚未实采' }}</span>
-                      </div>
-                      <div v-if="selectedSwitch.topology_role_label" class="switch-judgement-banner" :class="{ warning: selectedSwitch.topology_auto_flagged }">
-                        <strong>{{ selectedSwitch.topology_role_label }}</strong>
-                        <span>{{ clean(selectedSwitch.topology_judgement_summary || '系统已根据交换机实采结果自动标记。') }}</span>
-                      </div>
-                      <div class="detail-grid">
-                        <div><label>探测状态</label><p>{{ healthStateLabel(selectedSwitch.live_probe_status) }}</p></div>
-                        <div><label>版本</label><p>{{ clean(selectedSwitch.live_probe_version_text || '-') }}</p></div>
-                        <div><label>Telnet</label><p class="mono">{{ clean(selectedSwitch.live_probe_telnet_status || '-') }}</p></div>
-                        <div><label>HTTP / HTTPS</label><p class="mono">{{ clean(selectedSwitch.live_probe_http_status || '-') }} / {{ clean(selectedSwitch.live_probe_https_status || '-') }}</p></div>
-                        <div><label>ARP 条目</label><p>{{ selectedSwitch.live_probe_arp_entry_count || 0 }}</p></div>
-                        <div><label>命中摄像头</label><p>{{ selectedSwitch.live_probe_camera_match_count || 0 }}</p></div>
-                        <div><label>自动判定</label><p>{{ clean(selectedSwitch.topology_gap_label || '-') }}</p></div>
-                        <div><label>拓扑角色</label><p>{{ clean(selectedSwitch.topology_role_label || '-') }}</p></div>
-                      </div>
-                      <div class="link-card">
-                        <div><label>L2 MAC 条目</label><strong>{{ selectedSwitch.live_probe_l2_mac_count || 0 }}</strong></div>
-                        <p>{{ clean(selectedSwitch.live_probe_error_message || '本次实采未返回错误信息。') }}</p>
-                      </div>
-                    </div>
-
-                    <div class="detail-section">
-                      <div class="section-mini-head"><strong>基础资料</strong><span>{{ clean(selectedSwitch.primary_source_type || 'manual') }}</span></div>
-                      <div class="detail-grid">
-                        <div><label>区域</label><p>{{ clean(selectedSwitch.area_display_name || selectedSwitch.area_name || '-') }}</p></div>
-                        <div><label>厂商</label><p>{{ clean(selectedSwitch.vendor || '-') }}</p></div>
-                        <div><label>型号</label><p>{{ clean(selectedSwitch.model || '-') }}</p></div>
-                        <div><label>资产状态</label><p>{{ deviceStatusLabel(selectedSwitch.device_status) }}</p></div>
-                      </div>
-                    </div>
-
-                    <div class="detail-section">
-                      <div class="section-mini-head"><strong>网络信息</strong><span>{{ healthStateLabel(selectedSwitch.health_state) }}</span></div>
-                      <div class="detail-grid">
-                        <div><label>管理 IP</label><p class="mono">{{ selectedSwitch.management_ip || '-' }}</p></div>
-                        <div><label>业务 IP</label><p class="mono">{{ selectedSwitch.service_ip || '-' }}</p></div>
-                        <div><label>MAC</label><p class="mono">{{ clean(selectedSwitch.mac_address || '-') }}</p></div>
-                        <div><label>序列号</label><p>{{ clean(selectedSwitch.serial_number || '-') }}</p></div>
-                      </div>
-                    </div>
-
-                    <div class="detail-section">
-                      <div class="section-mini-head"><strong>备注</strong></div>
-                      <div class="link-card">
-                        <p>{{ clean(selectedSwitch.notes || '暂无备注') }}</p>
-                      </div>
-                    </div>
-                  </template>
-
-                  <template v-else>
-                    <article class="empty-state detail-empty detail-empty-card">
-                      <p class="eyebrow">{{ filters.device_type === 'switch' ? 'SELECT A SWITCH' : 'SELECT A CAMERA' }}</p>
-                      <strong>{{ visibleAssetCount > 0 ? '右侧处理区已就绪，先从中间清单选中对象。' : '当前筛选范围里还没有可处理对象。' }}</strong>
-                      <span>{{ visibleAssetCount > 0 ? currentSelectionGuide : '可以先恢复默认筛选，或直接新增资产后再继续处理。' }}</span>
-                      <div class="primary-ops">
-                        <el-button v-if="visibleAssetCount > 0" type="primary" @click="selectFirstVisible">定位当前页第一项</el-button>
-                        <el-button @click="resetFilters">恢复默认筛选</el-button>
-                        <el-button @click="openDeviceForm()">添加资产</el-button>
-                      </div>
-                    </article>
-                  </template>
-                </el-scrollbar>
-              </el-card>
-            </div>
-        </el-aside>
-      </el-container>
-    </el-container>
-
+    <input ref="fieldValidationInputRef" type="file" accept=".csv,text/csv" class="asset-hidden-input" @change="handleFieldValidationImport" />
+    <input ref="switchGapInputRef" type="file" accept=".csv,text/csv" class="asset-hidden-input" @change="handleSwitchGapImport" />
     <div v-if="previewDialog.visible" class="dialog-backdrop" @click.self="closePreviewDialog">
       <div class="dialog-shell video-dialog-shell">
         <div class="dialog-head">
@@ -685,6 +199,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import flvjs from "flv.js";
+import SpaceTree from "../components/asset/SpaceTree.vue";
+import AssetTable from "../components/asset/AssetTable.vue";
+import SnapshotPanel from "../components/asset/SnapshotPanel.vue";
 import {
   archiveDevice,
   buildChannelFlvUrl,
@@ -979,6 +496,43 @@ const streamDiagnosticButtonLabel = computed(() => {
   if (streamDiagnosticStatus.value?.pending) return "同步最新取流验收";
   return "重载取流验收";
 });
+const assetTableContext = computed(() => ({
+  filters,
+  areas: areas.value,
+  tableRows: tableRows.value,
+  assetLoading: assetLoading.value,
+  sortMode: sortMode.value,
+  switchSortMode: switchSortMode.value,
+  page: page.value,
+  pageSize,
+  totalPages: totalPages.value,
+  visibleAssetCount: visibleAssetCount.value,
+  currentSelectionTitle: currentSelectionTitle.value,
+  currentSelectionMeta: currentSelectionMeta.value,
+  switchReviewCount: switchReviewCount.value,
+  streamAbnormalCount: streamAbnormalCount.value,
+  lastUpdatedLabel: lastUpdatedLabel.value,
+  feedbackMessage: feedbackMessage.value,
+  streamDiagnosticButtonLabel: streamDiagnosticButtonLabel.value,
+  fieldValidationImportBusy: fieldValidationImportBusy.value,
+  switchGapImportBusy: switchGapImportBusy.value,
+  switchProbeBusy: switchProbeBusy.value,
+  actions: assetTableActions,
+  helpers: assetViewHelpers,
+}));
+const snapshotPanelContext = computed(() => ({
+  filters,
+  selectedChannel: selectedChannel.value,
+  selectedSwitch: selectedSwitch.value,
+  selectedSnapshotUrl: selectedSnapshotUrl.value,
+  feedbackMessage: feedbackMessage.value,
+  lastUpdatedLabel: lastUpdatedLabel.value,
+  visibleAssetCount: visibleAssetCount.value,
+  currentSelectionGuide: currentSelectionGuide.value,
+  switchProbeBusy: switchProbeBusy.value,
+  actions: snapshotPanelActions,
+  helpers: assetViewHelpers,
+}));
 const streamFollowupPlan = computed(() => {
   if (streamAbnormalCount.value > 0) {
     return {
@@ -1947,6 +1501,97 @@ function onAssetRowClick(row) {
   }
   selectChannel(row);
 }
+
+function handleNodeSelect(node) {
+  handleNodeClick(node);
+}
+
+function handleDeviceSelect(row) {
+  onAssetRowClick(row);
+}
+
+function updateAssetPage(nextPage) {
+  const target = Number(nextPage);
+  page.value = Number.isFinite(target) ? Math.min(totalPages.value, Math.max(1, Math.floor(target))) : 1;
+  selectFirstVisible();
+}
+
+function updateAssetSortMode(value) {
+  sortMode.value = value || "channel_desc";
+  page.value = 1;
+  selectFirstVisible();
+}
+
+function updateSwitchSortMode(value) {
+  switchSortMode.value = value || "ip_asc";
+  page.value = 1;
+  selectFirstVisible();
+}
+
+const assetViewHelpers = {
+  areaOptionLabel,
+  cameraTitle,
+  assetStatusTagType,
+  assetStatusLabel,
+  platformLabel,
+  shortArea,
+  areaAccuracyLabel,
+  bindingLabel,
+  streamProbeDisplayLabel,
+  healthStateLabel,
+  clean,
+  topologyEvidenceLabel,
+  streamStatusClass,
+  formatProbeTime,
+  streamAdvice,
+  sourceLineageLabel,
+  areaScopeNote,
+  platformStatusLabel,
+  deviceStatusLabel,
+};
+
+const assetTableActions = {
+  openDeviceForm,
+  exportCurrentAssets,
+  resetFilters,
+  refreshStreamDiagnostics,
+  quickPlatform,
+  quickBinding,
+  triggerFieldValidationImport,
+  triggerSwitchGapImport,
+  applyAssetFilters,
+  loadChannels,
+  selectFirstVisible,
+  ensureSelectedPage,
+  prevPage,
+  nextPage,
+  selectChannel,
+  selectSwitch,
+  openPreview,
+  refreshSelectedSnapshot,
+  openBindingDialog,
+  openSelectedChannelTopology,
+  probeSelectedSwitch,
+  openSelectedSwitchTopology,
+  openExistingDeviceForm,
+};
+
+const snapshotPanelActions = {
+  openPreview,
+  refreshSelectedSnapshot,
+  openBindingDialog,
+  openDeviceForm,
+  copyRtsp,
+  openSnapshot,
+  openSelectedChannelTopology,
+  archiveSelectedDevice,
+  copyDiagnostic,
+  probeSelectedSwitch,
+  openSelectedSwitchTopology,
+  openExistingDeviceForm,
+  selectFirstVisible,
+  resetFilters,
+};
 
 function selectFirstVisible() {
   if (filters.device_type === "switch") {
@@ -4451,6 +4096,27 @@ function clean(value) {
   }
 }
 
+/* DarkStar decoupled asset canvas */
+.asset-center-page {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  background: #05080f !important;
+}
+
+.asset-center-canvas {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.asset-hidden-input {
+  display: none;
+}
+
 </style>
 
 <style>
@@ -4645,3 +4311,4 @@ html[data-theme="dark"] .asset-page-wrapper .asset-floor-panel {
   background: rgba(255, 255, 255, 0.05);
 }
 </style>
+
